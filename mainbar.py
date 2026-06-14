@@ -1,0 +1,224 @@
+"""フローティングバー本体（非アクティブ化・常時最前面）。
+
+クリックしてもフォーカスを奪わないよう、ウィンドウ生成後に拡張スタイル
+WS_EX_NOACTIVATE を付与する。これにより操作対象（ターミナル）のフォーカスが
+残り、SendInput がそこへ届く。
+"""
+
+from __future__ import annotations
+
+import ctypes
+import sys
+
+from PySide6.QtCore import Qt, QPoint
+from PySide6.QtWidgets import (
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+import config as config_mod
+import keysender
+from settings_dialog import SettingsDialog
+
+# 拡張ウィンドウスタイル定数
+GWL_EXSTYLE = -20
+WS_EX_NOACTIVATE = 0x08000000
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_TOPMOST = 0x00000008
+
+
+def _apply_no_activate(hwnd: int) -> None:
+    """HWND に WS_EX_NOACTIVATE 等を付与し、フォーカスを奪わないようにする。"""
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    get_long = user32.GetWindowLongPtrW
+    set_long = user32.SetWindowLongPtrW
+    get_long.restype = ctypes.c_longlong
+    set_long.restype = ctypes.c_longlong
+    ex = get_long(ctypes.c_void_p(hwnd), GWL_EXSTYLE)
+    ex |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST
+    set_long(ctypes.c_void_p(hwnd), GWL_EXSTYLE, ex)
+
+
+class MainBar(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cfg = config_mod.load_config()
+        self._drag_offset: QPoint | None = None
+
+        self.setWindowTitle("Shiftab")
+        self.setWindowFlags(
+            Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.Tool  # タスクバーに出さない
+        )
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+
+        self._root = QVBoxLayout(self)
+        self._root.setContentsMargins(6, 6, 6, 6)
+        self._root.setSpacing(6)
+
+        self._build_ui()
+        self._apply_window_settings()
+
+    # ------------------------------------------------------------------ UI
+    def _clear_layout(self, layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+            elif item.layout() is not None:
+                self._clear_layout(item.layout())
+
+    def _build_ui(self) -> None:
+        self._clear_layout(self._root)
+
+        size = int(self.cfg["window"].get("button_size", 56))
+        cols = max(1, int(self.cfg["window"].get("columns", 6)))
+
+        # --- ヘッダ（ドラッグ取っ手 + 設定 + 閉じる） ---
+        header = QHBoxLayout()
+        handle = QLabel("⠿ Shiftab")
+        handle.setStyleSheet("color:#888; font-weight:bold;")
+        header.addWidget(handle)
+        header.addStretch(1)
+
+        gear = QPushButton("⚙")
+        gear.setFixedSize(28, 24)
+        gear.setToolTip("設定")
+        gear.clicked.connect(self._open_settings)
+        header.addWidget(gear)
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(28, 24)
+        close_btn.setToolTip("閉じる")
+        close_btn.clicked.connect(self.close)
+        header.addWidget(close_btn)
+        self._root.addLayout(header)
+
+        # --- 特殊キー: Shift+Tab と矢印 ---
+        special = QHBoxLayout()
+        shift_tab = self._make_button("⇧Tab", size, height=size)
+        shift_tab.setToolTip("Shift+Tab")
+        shift_tab.clicked.connect(keysender.send_shift_tab)
+        special.addWidget(shift_tab)
+
+        special.addSpacing(8)
+        for label, direction in (("←", "left"), ("↑", "up"), ("↓", "down"), ("→", "right")):
+            b = self._make_button(label, size, height=size)
+            b.setToolTip(f"{direction} arrow")
+            b.clicked.connect(lambda _checked=False, d=direction: keysender.send_arrow(d))
+            special.addWidget(b)
+        special.addStretch(1)
+        self._root.addLayout(special)
+
+        # --- 定型文ボタン ---
+        if self.cfg["phrases"]:
+            self._root.addWidget(self._section_label("定型文（文字列＋Enter）"))
+            grid = QGridLayout()
+            grid.setSpacing(4)
+            for i, item in enumerate(self.cfg["phrases"]):
+                text = item.get("text", "")
+                label = item.get("label") or text
+                b = self._make_button(label, size * 2, height=size)
+                b.setToolTip(text)
+                b.clicked.connect(lambda _checked=False, t=text: self._send_phrase(t))
+                grid.addWidget(b, i // cols, i % cols)
+            self._root.addLayout(grid)
+
+        # --- コマンドボタン ---
+        if self.cfg["commands"]:
+            self._root.addWidget(self._section_label("コマンド"))
+            grid = QGridLayout()
+            grid.setSpacing(4)
+            for i, item in enumerate(self.cfg["commands"]):
+                cmd = item.get("command", "")
+                label = item.get("label") or cmd
+                auto = bool(item.get("auto_enter", True))
+                b = self._make_button(label, size * 2, height=size)
+                tip = f"{cmd} + Enter" if auto else f"{cmd} （Enterなし／文章ボタンで補完）"
+                b.setToolTip(tip)
+                b.clicked.connect(
+                    lambda _checked=False, c=cmd, a=auto: self._send_command(c, a)
+                )
+                grid.addWidget(b, i // cols, i % cols)
+            self._root.addLayout(grid)
+
+        self.adjustSize()
+
+    def _section_label(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet("color:#aaa; font-size:10px;")
+        return lbl
+
+    def _make_button(self, text: str, width: int, height: int) -> QPushButton:
+        b = QPushButton(text)
+        b.setMinimumSize(width, height)
+        b.setFocusPolicy(Qt.NoFocus)  # ボタン自身にフォーカスを残さない
+        return b
+
+    # ------------------------------------------------------------- handlers
+    def _send_phrase(self, text: str) -> None:
+        keysender.send_text(text)
+        keysender.send_enter()
+
+    def _send_command(self, command: str, auto_enter: bool) -> None:
+        if auto_enter:
+            keysender.send_text(command)
+            keysender.send_enter()
+        else:
+            # 引数待ち: コマンド + 半角スペースのみ。Enter は押さない。
+            keysender.send_text(command + " ")
+
+    def _open_settings(self) -> None:
+        dlg = SettingsDialog(self.cfg, self)
+        if dlg.exec():
+            self.cfg = dlg.result_config()
+            config_mod.save_config(self.cfg)
+            self._build_ui()
+            self._apply_window_settings()
+
+    # ------------------------------------------------------- window helpers
+    def _apply_window_settings(self) -> None:
+        win = self.cfg.get("window", {})
+        self.setWindowOpacity(float(win.get("opacity", 0.95)))
+        x, y = win.get("x"), win.get("y")
+        if isinstance(x, int) and isinstance(y, int):
+            self.move(x, y)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        # ウィンドウ生成後に非アクティブ化スタイルを付与
+        if sys.platform == "win32":
+            _apply_no_activate(int(self.winId()))
+
+    def _save_position(self) -> None:
+        self.cfg.setdefault("window", {})
+        self.cfg["window"]["x"] = self.x()
+        self.cfg["window"]["y"] = self.y()
+        config_mod.save_config(self.cfg)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._save_position()
+        super().closeEvent(event)
+
+    # ------------------------------------------------------------- dragging
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.LeftButton:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._drag_offset is not None and event.buttons() & Qt.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._drag_offset is not None:
+            self._drag_offset = None
+            self._save_position()
+            event.accept()
