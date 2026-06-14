@@ -8,7 +8,9 @@ venv/
 # PyInstaller
 build/
 dist/
+# アイコン等を設定済みの Shiftab.spec は追跡する
 *.spec
+!Shiftab.spec
 
 # OS / editor
 .DS_Store

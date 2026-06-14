@@ -28,19 +28,42 @@ from settings_dialog import SettingsDialog
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_APPWINDOW = 0x00040000
 WS_EX_TOPMOST = 0x00000008
+
+# SetWindowPos フラグ（スタイル変更をタスクバーに反映させる frame-changed 通知用）
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOZORDER = 0x0004
+SWP_NOACTIVATE = 0x0010
+SWP_FRAMECHANGED = 0x0020
+SW_HIDE = 0
+SW_SHOWNA = 8  # アクティブ化せずに表示
 
 
 def _apply_no_activate(hwnd: int) -> None:
-    """HWND に WS_EX_NOACTIVATE 等を付与し、フォーカスを奪わないようにする。"""
+    """HWND に WS_EX_NOACTIVATE を付与してフォーカスを奪わないようにしつつ、
+    WS_EX_APPWINDOW を付けてタスクバーに（アプリ独自アイコンで）表示させる。"""
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     get_long = user32.GetWindowLongPtrW
     set_long = user32.SetWindowLongPtrW
     get_long.restype = ctypes.c_longlong
     set_long.restype = ctypes.c_longlong
     ex = get_long(ctypes.c_void_p(hwnd), GWL_EXSTYLE)
-    ex |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST
+    # 非アクティブ化＋常時最前面＋タスクバー表示。ツールウィンドウ化は外す。
+    ex |= WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_APPWINDOW
+    ex &= ~WS_EX_TOOLWINDOW
     set_long(ctypes.c_void_p(hwnd), GWL_EXSTYLE, ex)
+    # frame-changed を通知し、タスクバーボタンを再評価させる。
+    user32.SetWindowPos(
+        ctypes.c_void_p(hwnd), None, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+    )
+    # WS_EX_APPWINDOW をタスクバーに確実に反映させるため、非アクティブのまま
+    # 隠して再表示する（ShowWindow はネイティブ呼び出しで Qt の showEvent を
+    # 再帰させない）。
+    user32.ShowWindow(ctypes.c_void_p(hwnd), SW_HIDE)
+    user32.ShowWindow(ctypes.c_void_p(hwnd), SW_SHOWNA)
 
 
 class MainBar(QWidget):
@@ -53,9 +76,15 @@ class MainBar(QWidget):
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
-            | Qt.Tool  # タスクバーに出さない
+            # Qt.Tool は付けない（タスクバーに表示するため）。
+            # タスクバー非表示化は _apply_no_activate 側で WS_EX_TOOLWINDOW を
+            # 外し WS_EX_APPWINDOW を付けて制御する。
         )
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        # Qt.Tool ウィンドウは既定で WA_QuitOnClose=False となり、✕ で閉じても
+        # プロセスが残ってしまう。明示的に True にして、最後の窓を閉じたら
+        # プロセスごと終了するようにする。
+        self.setAttribute(Qt.WA_QuitOnClose, True)
 
         self._root = QVBoxLayout(self)
         self._root.setContentsMargins(6, 6, 6, 6)

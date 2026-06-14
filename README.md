@@ -32,7 +32,8 @@ python main.py
 2. タイトル部分（⠿ Shiftab）をドラッグして好きな位置へ移動できます。位置は保存されます。
 3. Claude Code のターミナルを開いた状態で、各ボタンを押すとそちらへキーが届きます。
 4. 右上の **⚙** で設定画面を開き、定型文・コマンド・外観（不透明度／ボタンサイズ／列数）を編集できます。
-5. 右上の **✕** で終了します（タスクバーには表示されません）。
+5. 右上の **✕** で終了します。タスクバーにアイコンが表示されますが、クリックしても
+   フォーカスは奪いません（`WS_EX_NOACTIVATE`）。
 
 ## 配布版（exe）
 
@@ -41,13 +42,15 @@ python main.py
 ## 自分でビルドする（exe化）
 
 [PyInstaller](https://pyinstaller.org/) で単一実行ファイルを作成できます。
+アイコン設定を含む `Shiftab.spec` を使うのが簡単です。
 
 ```sh
 pip install pyinstaller
-pyinstaller --noconfirm --windowed --onefile --name Shiftab main.py
+pyinstaller --noconfirm Shiftab.spec
 ```
 
-`dist\Shiftab.exe` が生成されます。
+`dist\Shiftab.exe` が生成されます。アプリアイコンは `icon.ico`（角丸・マルチ解像度）を
+埋め込み・同梱します。差し替えるときは `icon.ico` を置き換えて再ビルドしてください。
 
 ## 設定ファイル
 
