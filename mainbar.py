@@ -142,6 +142,18 @@ class MainBar(QWidget):
             b.setToolTip(f"{direction} arrow")
             b.clicked.connect(lambda _checked=False, d=direction: keysender.send_arrow(d))
             special.addWidget(b)
+
+        special.addSpacing(8)
+        ctrl_c = self._make_button("⌃C", size, height=size)
+        ctrl_c.setToolTip("Ctrl+C（中断）")
+        ctrl_c.clicked.connect(keysender.send_ctrl_c)
+        special.addWidget(ctrl_c)
+
+        bksp = self._make_button("⌫", size, height=size)
+        bksp.setToolTip("Backspace")
+        bksp.clicked.connect(keysender.send_backspace)
+        special.addWidget(bksp)
+
         special.addStretch(1)
         self._root.addLayout(special)
 
@@ -192,16 +204,20 @@ class MainBar(QWidget):
 
     # ------------------------------------------------------------- handlers
     def _send_phrase(self, text: str) -> None:
-        keysender.send_text(text)
-        keysender.send_enter()
+        # 送信中だけ送信先の IME をオフにする（重複入力・Enter 不達の回避）。
+        with keysender.ime_disabled():
+            keysender.send_text(text)
+            keysender.send_enter()
 
     def _send_command(self, command: str, auto_enter: bool) -> None:
-        if auto_enter:
-            keysender.send_text(command)
-            keysender.send_enter()
-        else:
-            # 引数待ち: コマンド + 半角スペースのみ。Enter は押さない。
-            keysender.send_text(command + " ")
+        # 送信中だけ送信先の IME をオフにする（重複入力・Enter 不達の回避）。
+        with keysender.ime_disabled():
+            if auto_enter:
+                keysender.send_text(command)
+                keysender.send_enter()
+            else:
+                # 引数待ち: コマンド + 半角スペースのみ。Enter は押さない。
+                keysender.send_text(command + " ")
 
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self.cfg, self)
