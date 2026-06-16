@@ -1,1 +1,3 @@
 pytest>=8
+# scripts/make_demo.py（README用デモGIF生成）で使用
+pillow>=10
