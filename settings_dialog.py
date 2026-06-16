@@ -275,6 +275,11 @@ class SettingsDialog(QDialog):
         table.selectRow(target)
 
     def _swap_rows(self, table: QTableWidget, a: int, b: int) -> None:
+        """2行の内容を入れ替える。
+
+        各列は同種（全行プレーンな item か、全行セル widget か）であることを前提とする。
+        現状の3テーブルはこの前提を満たす（コマンド表の3列目のみ常にチェックボックス）。
+        """
         for col in range(table.columnCount()):
             wa = table.cellWidget(a, col)
             wb = table.cellWidget(b, col)
