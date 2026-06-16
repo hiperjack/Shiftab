@@ -130,33 +130,25 @@ class MainBar(QWidget):
         header.addWidget(close_btn)
         self._root.addLayout(header)
 
-        # --- 特殊キー: Shift+Tab と矢印 ---
-        special = QHBoxLayout()
-        shift_tab = self._make_button("⇧Tab", size, height=size)
-        shift_tab.setToolTip("Shift+Tab")
-        shift_tab.clicked.connect(keysender.send_shift_tab)
-        special.addWidget(shift_tab)
-
-        special.addSpacing(8)
-        for label, direction in (("←", "left"), ("↑", "up"), ("↓", "down"), ("→", "right")):
-            b = self._make_button(label, size, height=size)
-            b.setToolTip(f"{direction} arrow")
-            b.clicked.connect(lambda _checked=False, d=direction: keysender.send_arrow(d))
-            special.addWidget(b)
-
-        special.addSpacing(8)
-        ctrl_c = self._make_button("⌃C", size, height=size)
-        ctrl_c.setToolTip("Ctrl+C（中断）")
-        ctrl_c.clicked.connect(keysender.send_ctrl_c)
-        special.addWidget(ctrl_c)
-
-        bksp = self._make_button("⌫", size, height=size)
-        bksp.setToolTip("Backspace")
-        bksp.clicked.connect(keysender.send_backspace)
-        special.addWidget(bksp)
-
-        special.addStretch(1)
-        self._root.addLayout(special)
+        # --- 操作キー（設定 cfg["keys"] から動的生成、列数で折り返し） ---
+        keys = self.cfg.get("keys", [])
+        if keys:
+            grid = QGridLayout()
+            grid.setSpacing(4)
+            placed = 0
+            for item in keys:
+                tokens = item.get("keys", [])
+                if not tokens:
+                    continue
+                label = item.get("label") or keysender.keys_to_label(tokens)
+                b = self._make_button(label, size, height=size)
+                b.setToolTip(keysender.keys_to_label(tokens))
+                b.clicked.connect(
+                    lambda _checked=False, ks=list(tokens): keysender.send_keys(ks)
+                )
+                grid.addWidget(b, placed // cols, placed % cols)
+                placed += 1
+            self._root.addLayout(grid)
 
         # --- 定型文ボタン ---
         if self.cfg["phrases"]:

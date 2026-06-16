@@ -5,6 +5,7 @@
 
 スキーマ:
 {
+  "keys":     [{"label": str, "keys": [str]}],
   "phrases":  [{"label": str, "text": str}],
   "commands": [{"label": str, "command": str, "auto_enter": bool}],
   "window":   {"x": int|None, "y": int|None, "opacity": float,
@@ -23,6 +24,15 @@ APP_NAME = "Shiftab"
 
 # 既定設定
 DEFAULT_CONFIG: dict = {
+    "keys": [
+        {"label": "⇧Tab", "keys": ["shift", "tab"]},
+        {"label": "←", "keys": ["left"]},
+        {"label": "↑", "keys": ["up"]},
+        {"label": "↓", "keys": ["down"]},
+        {"label": "→", "keys": ["right"]},
+        {"label": "⌃C", "keys": ["ctrl", "c"]},
+        {"label": "⌫", "keys": ["backspace"]},
+    ],
     "phrases": [
         {"label": "OK", "text": "OK"},
         {"label": "いいよ", "text": "いいよ"},
@@ -66,6 +76,8 @@ def _merge_defaults(loaded: dict) -> dict:
         cfg["phrases"] = loaded["phrases"]
     if isinstance(loaded.get("commands"), list):
         cfg["commands"] = loaded["commands"]
+    if isinstance(loaded.get("keys"), list):
+        cfg["keys"] = loaded["keys"]
     if isinstance(loaded.get("window"), dict):
         cfg["window"].update(loaded["window"])
     return cfg

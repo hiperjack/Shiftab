@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -26,6 +28,39 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+import keysender
+
+# 「＋追加」メニューに出す候補: (表示名, トークン列)
+KEY_CATALOG = [
+    ("⇧Tab", ["shift", "tab"]),
+    ("⏎ Enter", ["enter"]),
+    ("Esc", ["esc"]),
+    ("Tab", ["tab"]),
+    ("←", ["left"]),
+    ("↑", ["up"]),
+    ("↓", ["down"]),
+    ("→", ["right"]),
+    ("⌃C", ["ctrl", "c"]),
+    ("⌃V", ["ctrl", "v"]),
+    ("Home", ["home"]),
+    ("End", ["end"]),
+    ("PgUp", ["pageup"]),
+    ("PgDn", ["pagedown"]),
+    ("Delete", ["delete"]),
+    ("⌫", ["backspace"]),
+]
+
+# カスタムキー作成ダイアログ用
+_MODIFIERS = [("Ctrl", "ctrl"), ("Shift", "shift"), ("Alt", "alt"), ("Win", "win")]
+_BASE_KEYS = [
+    ("(なし)", None),
+    ("Enter", "enter"), ("Esc", "esc"), ("Tab", "tab"),
+    ("Backspace", "backspace"), ("Delete", "delete"),
+    ("←", "left"), ("↑", "up"), ("↓", "down"), ("→", "right"),
+    ("Home", "home"), ("End", "end"), ("PgUp", "pageup"), ("PgDn", "pagedown"),
+] + [(c.upper(), c) for c in "abcdefghijklmnopqrstuvwxyz"] \
+  + [(str(d), str(d)) for d in range(10)]
 
 
 class SettingsDialog(QDialog):
@@ -38,6 +73,7 @@ class SettingsDialog(QDialog):
         self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
 
         root = QVBoxLayout(self)
+        root.addWidget(self._build_keys_group())
         root.addWidget(self._build_phrases_group())
         root.addWidget(self._build_commands_group())
         root.addWidget(self._build_appearance_group())
@@ -46,6 +82,62 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    # ---------------------------------------------------------- 操作キー
+    def _build_keys_group(self) -> QGroupBox:
+        box = QGroupBox("操作キー（1回押すとそのキー／組み合わせを送信）")
+        layout = QVBoxLayout(box)
+
+        self.keys_table = QTableWidget(0, 2)
+        self.keys_table.setHorizontalHeaderLabels(["表示名", "キー"])
+        self._setup_table(self.keys_table)
+        for item in self._cfg.get("keys", []):
+            self._add_key_row(item.get("label", ""), item.get("keys", []))
+        layout.addWidget(self.keys_table)
+        layout.addLayout(self._key_row_buttons())
+        return box
+
+    def _add_key_row(self, label: str, tokens: list) -> None:
+        tokens = list(tokens)
+        r = self.keys_table.rowCount()
+        self.keys_table.insertRow(r)
+        self.keys_table.setItem(r, 0, QTableWidgetItem(label or keysender.keys_to_label(tokens)))
+        key_item = QTableWidgetItem(keysender.keys_to_label(tokens))
+        key_item.setData(Qt.UserRole, tokens)
+        key_item.setFlags(key_item.flags() & ~Qt.ItemIsEditable)  # キー列は直接編集不可
+        self.keys_table.setItem(r, 1, key_item)
+
+    def _key_row_buttons(self) -> QHBoxLayout:
+        bar = QHBoxLayout()
+        add = QPushButton("＋ 追加")
+        menu = QMenu(add)
+        for label, tokens in KEY_CATALOG:
+            act = menu.addAction(label)
+            act.triggered.connect(
+                lambda _checked=False, l=label, t=list(tokens): self._add_key_row(l, t)
+            )
+        menu.addSeparator()
+        custom = menu.addAction("カスタム…")
+        custom.triggered.connect(self._add_custom_key)
+        add.setMenu(menu)
+
+        remove = QPushButton("－ 削除")
+        remove.clicked.connect(lambda: self._remove_selected(self.keys_table))
+        up = QPushButton("▲")
+        up.clicked.connect(lambda: self._move_row(self.keys_table, -1))
+        down = QPushButton("▼")
+        down.clicked.connect(lambda: self._move_row(self.keys_table, 1))
+        for w in (add, remove, up, down):
+            bar.addWidget(w)
+        bar.addStretch(1)
+        return bar
+
+    def _add_custom_key(self) -> None:
+        dlg = CustomKeyDialog(self)
+        if dlg.exec():
+            tokens = dlg.tokens()
+            if tokens:
+                self._add_key_row(keysender.keys_to_label(tokens), tokens)
 
     # ------------------------------------------------------------- phrases
     def _build_phrases_group(self) -> QGroupBox:
@@ -157,8 +249,12 @@ class SettingsDialog(QDialog):
         add.clicked.connect(add_fn)
         remove = QPushButton("－ 削除")
         remove.clicked.connect(lambda: self._remove_selected(table))
-        bar.addWidget(add)
-        bar.addWidget(remove)
+        up = QPushButton("▲")
+        up.clicked.connect(lambda: self._move_row(table, -1))
+        down = QPushButton("▼")
+        down.clicked.connect(lambda: self._move_row(table, 1))
+        for w in (add, remove, up, down):
+            bar.addWidget(w)
         bar.addStretch(1)
         return bar
 
@@ -166,6 +262,54 @@ class SettingsDialog(QDialog):
         rows = sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True)
         for r in rows:
             table.removeRow(r)
+
+    def _move_row(self, table: QTableWidget, delta: int) -> None:
+        rows = sorted({idx.row() for idx in table.selectedIndexes()})
+        if len(rows) != 1:
+            return
+        r = rows[0]
+        target = r + delta
+        if target < 0 or target >= table.rowCount():
+            return
+        self._swap_rows(table, r, target)
+        table.selectRow(target)
+
+    def _swap_rows(self, table: QTableWidget, a: int, b: int) -> None:
+        """2行の内容を入れ替える。
+
+        各列は同種（全行プレーンな item か、全行セル widget か）であることを前提とする。
+        現状の3テーブルはこの前提を満たす（コマンド表の3列目のみ常にチェックボックス）。
+        """
+        for col in range(table.columnCount()):
+            wa = table.cellWidget(a, col)
+            wb = table.cellWidget(b, col)
+            if wa is not None or wb is not None:
+                ca = self._checkbox_state(table, a, col)
+                cb = self._checkbox_state(table, b, col)
+                self._set_checkbox_state(table, a, col, cb)
+                self._set_checkbox_state(table, b, col, ca)
+            else:
+                ia = table.takeItem(a, col)
+                ib = table.takeItem(b, col)
+                table.setItem(a, col, ib)
+                table.setItem(b, col, ia)
+
+    def _checkbox_state(self, table: QTableWidget, row: int, col: int):
+        wrap = table.cellWidget(row, col)
+        if wrap is None:
+            return None
+        chk = wrap.findChild(QCheckBox)
+        return chk.isChecked() if chk is not None else None
+
+    def _set_checkbox_state(self, table: QTableWidget, row: int, col: int, state) -> None:
+        if state is None:
+            return
+        wrap = table.cellWidget(row, col)
+        if wrap is None:
+            return
+        chk = wrap.findChild(QCheckBox)
+        if chk is not None:
+            chk.setChecked(bool(state))
 
     # -------------------------------------------------------------- result
     def _cell_text(self, table: QTableWidget, row: int, col: int) -> str:
@@ -195,6 +339,16 @@ class SettingsDialog(QDialog):
                 {"label": label, "command": command, "auto_enter": auto_enter}
             )
 
+        keys = []
+        for r in range(self.keys_table.rowCount()):
+            key_item = self.keys_table.item(r, 1)
+            tokens = key_item.data(Qt.UserRole) if key_item is not None else None
+            if not tokens:
+                continue
+            label = self._cell_text(self.keys_table, r, 0) or keysender.keys_to_label(tokens)
+            keys.append({"label": label, "keys": list(tokens)})
+        self._cfg["keys"] = keys
+
         self._cfg["phrases"] = phrases
         self._cfg["commands"] = commands
         self._cfg.setdefault("window", {})
@@ -202,3 +356,44 @@ class SettingsDialog(QDialog):
         self._cfg["window"]["button_size"] = self.size_spin.value()
         self._cfg["window"]["columns"] = self.cols_spin.value()
         return self._cfg
+
+
+class CustomKeyDialog(QDialog):
+    """修飾キー（Ctrl/Shift/Alt/Win）＋ベースキーから組み合わせを作る。"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("カスタムキー")
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        root = QVBoxLayout(self)
+
+        root.addWidget(QLabel("修飾キー"))
+        mod_row = QHBoxLayout()
+        self._mod_checks = []
+        for label, token in _MODIFIERS:
+            chk = QCheckBox(label)
+            self._mod_checks.append((chk, token))
+            mod_row.addWidget(chk)
+        mod_row.addStretch(1)
+        root.addLayout(mod_row)
+
+        base_row = QHBoxLayout()
+        base_row.addWidget(QLabel("キー"))
+        self._base = QComboBox()
+        for label, token in _BASE_KEYS:
+            self._base.addItem(label, token)
+        base_row.addWidget(self._base)
+        base_row.addStretch(1)
+        root.addLayout(base_row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+    def tokens(self) -> list:
+        result = [token for chk, token in self._mod_checks if chk.isChecked()]
+        base = self._base.currentData()
+        if base is not None:
+            result.append(base)
+        return result
