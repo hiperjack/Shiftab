@@ -4,6 +4,13 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.pytest_cache/
+
+# アプリ本体と無関係なファイル（開発補助のスキルパッケージ等）
+*.skill
+
+# 開発プロセスの作業物（設計書・実装計画）。アプリ配布物には含めない
+docs/superpowers/
 
 # PyInstaller
 build/
