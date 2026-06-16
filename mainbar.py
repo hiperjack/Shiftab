@@ -10,7 +10,8 @@ from __future__ import annotations
 import ctypes
 import sys
 
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QRect
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
@@ -233,7 +234,34 @@ class MainBar(QWidget):
         self.setWindowOpacity(float(win.get("opacity", 0.95)))
         x, y = win.get("x"), win.get("y")
         if isinstance(x, int) and isinstance(y, int):
+            x, y = self._ensure_on_screen(x, y)
             self.move(x, y)
+
+    def _ensure_on_screen(self, x: int, y: int) -> tuple[int, int]:
+        """保存座標がいずれの画面にも乗っていなければ可視範囲へ補正する。
+
+        モニタ構成が2画面→1画面に変わると、旧位置がオフスクリーンになり
+        ウィンドウが見えなくなるため、左上点が現在の画面範囲外なら
+        プライマリ画面内へクランプする。
+        """
+        # ウィンドウサイズ確定前でも安全なよう sizeHint で見積もる
+        size = self.size()
+        w = size.width() or self.sizeHint().width()
+        h = size.height() or self.sizeHint().height()
+        for screen in QGuiApplication.screens():
+            geo = screen.availableGeometry()
+            # 左上付近が画面内にあれば可視とみなす
+            if geo.contains(QPoint(x + 10, y + 10)):
+                return x, y
+
+        # どの画面にも乗っていない → プライマリ画面内にクランプ
+        primary = QGuiApplication.primaryScreen()
+        geo = primary.availableGeometry() if primary else QRect(0, 0, 1920, 1080)
+        max_x = max(geo.left(), geo.right() - w)
+        max_y = max(geo.top(), geo.bottom() - h)
+        new_x = min(max(x, geo.left()), max_x)
+        new_y = min(max(y, geo.top()), max_y)
+        return new_x, new_y
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
