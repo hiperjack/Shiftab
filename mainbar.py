@@ -135,7 +135,8 @@ class MainBar(QWidget):
         if keys:
             grid = QGridLayout()
             grid.setSpacing(4)
-            for i, item in enumerate(keys):
+            placed = 0
+            for item in keys:
                 tokens = item.get("keys", [])
                 if not tokens:
                     continue
@@ -145,7 +146,8 @@ class MainBar(QWidget):
                 b.clicked.connect(
                     lambda _checked=False, ks=list(tokens): keysender.send_keys(ks)
                 )
-                grid.addWidget(b, i // cols, i % cols)
+                grid.addWidget(b, placed // cols, placed % cols)
+                placed += 1
             self._root.addLayout(grid)
 
         # --- 定型文ボタン ---
