@@ -7,6 +7,10 @@ def test_default_config_has_keys():
     first = keys[0]
     assert "label" in first and "keys" in first
     assert first["keys"] == ["shift", "tab"]
+    assert all(
+        isinstance(k, dict) and "label" in k and isinstance(k.get("keys"), list) and k["keys"]
+        for k in keys
+    )
 
 
 def test_merge_supplies_keys_when_missing():
