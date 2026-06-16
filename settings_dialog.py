@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -26,6 +28,39 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+import keysender
+
+# 「＋追加」メニューに出す候補: (表示名, トークン列)
+KEY_CATALOG = [
+    ("⇧Tab", ["shift", "tab"]),
+    ("⏎ Enter", ["enter"]),
+    ("Esc", ["esc"]),
+    ("Tab", ["tab"]),
+    ("←", ["left"]),
+    ("↑", ["up"]),
+    ("↓", ["down"]),
+    ("→", ["right"]),
+    ("⌃C", ["ctrl", "c"]),
+    ("⌃V", ["ctrl", "v"]),
+    ("Home", ["home"]),
+    ("End", ["end"]),
+    ("PgUp", ["pageup"]),
+    ("PgDn", ["pagedown"]),
+    ("Delete", ["delete"]),
+    ("⌫", ["backspace"]),
+]
+
+# カスタムキー作成ダイアログ用
+_MODIFIERS = [("Ctrl", "ctrl"), ("Shift", "shift"), ("Alt", "alt"), ("Win", "win")]
+_BASE_KEYS = [
+    ("(なし)", None),
+    ("Enter", "enter"), ("Esc", "esc"), ("Tab", "tab"),
+    ("Backspace", "backspace"), ("Delete", "delete"),
+    ("←", "left"), ("↑", "up"), ("↓", "down"), ("→", "right"),
+    ("Home", "home"), ("End", "end"), ("PgUp", "pageup"), ("PgDn", "pagedown"),
+] + [(c.upper(), c) for c in "abcdefghijklmnopqrstuvwxyz"] \
+  + [(str(d), str(d)) for d in range(10)]
 
 
 class SettingsDialog(QDialog):
