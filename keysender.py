@@ -27,6 +27,15 @@ VK_LEFT = 0x25
 VK_UP = 0x26
 VK_RIGHT = 0x27
 VK_DOWN = 0x28
+VK_ESCAPE = 0x1B
+VK_DELETE = 0x2E
+VK_HOME = 0x24
+VK_END = 0x23
+VK_PRIOR = 0x21  # PageUp
+VK_NEXT = 0x22   # PageDown
+VK_MENU = 0x12   # Alt
+VK_LWIN = 0x5B   # Windows キー
+VK_V = 0x56
 
 # 方向名 → VK
 ARROW_VK = {
@@ -34,6 +43,48 @@ ARROW_VK = {
     "down": VK_DOWN,
     "left": VK_LEFT,
     "right": VK_RIGHT,
+}
+
+# トークン名 → 仮想キーコード（名前付きキーのみ。1文字英数字は ord で導出）
+KEY_VK = {
+    "shift": VK_SHIFT,
+    "ctrl": VK_CONTROL,
+    "alt": VK_MENU,
+    "win": VK_LWIN,
+    "tab": VK_TAB,
+    "enter": VK_RETURN,
+    "esc": VK_ESCAPE,
+    "backspace": VK_BACK,
+    "delete": VK_DELETE,
+    "left": VK_LEFT,
+    "up": VK_UP,
+    "down": VK_DOWN,
+    "right": VK_RIGHT,
+    "home": VK_HOME,
+    "end": VK_END,
+    "pageup": VK_PRIOR,
+    "pagedown": VK_NEXT,
+}
+
+# トークン名 → ボタン/ツールチップ表示文字列
+_TOKEN_DISPLAY = {
+    "ctrl": "Ctrl",
+    "shift": "Shift",
+    "alt": "Alt",
+    "win": "Win",
+    "tab": "Tab",
+    "enter": "Enter",
+    "esc": "Esc",
+    "backspace": "Backspace",
+    "delete": "Delete",
+    "left": "←",
+    "up": "↑",
+    "down": "↓",
+    "right": "→",
+    "home": "Home",
+    "end": "End",
+    "pageup": "PgUp",
+    "pagedown": "PgDn",
 }
 
 # --- SendInput 関連の定数 ---
@@ -263,3 +314,30 @@ def send_text(text: str) -> None:
             _send([_unicode_input(code, False)])
             _send([_unicode_input(code, True)])
         time.sleep(_KEY_DELAY)
+
+
+def _resolve_token(token: str) -> int:
+    """キートークン名を仮想キーコードに解決する。
+
+    名前付きキーは KEY_VK を引く。1文字の英数字は ord(大文字) で導出する。
+    未知のトークンは ValueError。
+    """
+    t = token.strip().lower()
+    if t in KEY_VK:
+        return KEY_VK[t]
+    if len(t) == 1 and (t.isalpha() or t.isdigit()):
+        return ord(t.upper())
+    raise ValueError(f"unknown key token: {token!r}")
+
+
+def send_keys(tokens: list[str]) -> None:
+    """トークン名の並びをキーの組み合わせとして送る（例: ["ctrl","c"]）。"""
+    if not tokens:
+        return
+    vks = [_resolve_token(t) for t in tokens]
+    send_combo(vks)
+
+
+def keys_to_label(tokens: list[str]) -> str:
+    """トークンの並びを人間可読なラベルにする（例: ["ctrl","c"] → "Ctrl+C"）。"""
+    return "+".join(_TOKEN_DISPLAY.get(t.lower(), t.upper()) for t in tokens)
